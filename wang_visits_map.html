@@ -1,0 +1,144 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wang Globalnet - 방문지 지도</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100vh; width: 100vw; }
+    .label {
+      background: white;
+      border: 1px solid #555;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .legend {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(255,255,255,0.95);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, 'Apple Color Emoji','Segoe UI Emoji';
+      line-height: 1.3;
+    }
+    .legend h4 { margin: 0 0 6px 0; font-size: 14px; }
+    .legend ol { margin: 0; padding-left: 18px; max-height: 160px; overflow:auto;}
+    .legend li { font-size: 12px; margin-bottom: 2px; }
+    .footer {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(255,255,255,0.9); padding: 6px 10px; border-radius: 6px; border: 1px solid #ddd;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="legend">
+    <h4>방문지 목록 (클릭 시 이동)</h4>
+    <ol id="list"></ol>
+    <small>오류가 있으면 주소를 확인하세요.</small>
+  </div>
+  <div class="footer">배경지도 © OpenStreetMap | 지오코딩: Nominatim</div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+  <script>
+    const places = [
+      {name: "Tinda Filipino Store", address: "3810 N Mason Rd, Katy, TX 77449"},
+      {name: "Central African Market", address: "7334 Fry Rd Suite D, Cypress, TX 77433"},
+      {name: "Food Town", address: "15875 FM 529, Houston, TX 77095"},
+      {name: "Dong Hung Meat Market", address: "11078 Veterans Memorial Dr #263, Houston, TX 77067"},
+      {name: "A-1 Supermarket", address: "119 Atascocita Rd, Humble, TX 77396"},
+      {name: "Huy Video & Market", address: "13703 FM 529, Houston, TX 77041"},
+      {name: "Chợ Quê", address: "13250 FM 529 Suite H, Houston, TX 77041"},
+      {name: "Atonsou Royal African & Caribbean Food Market", address: "13150 FM 529 Suite 120, Houston, TX 77041"},
+      {name: "Golden Asian Market", address: "10301 Harwin Dr #2, Houston, TX 77036"},
+      {name: "Yin Wall City Inc", address: "9968 Bellaire Blvd, Houston, TX 77036"},
+      {name: "Viet Nam Food Market (Fried Fish By Michael)", address: "13151 Bissonnet St #700, Houston, TX 77099"},
+      {name: "Food Valley (Dong Mai Market)", address: "3418 Broadway St Suite E, Houston, TX 77017"},
+      {name: "My Quang Market", address: "12790 Scarsdale Blvd, Houston, TX 77089"},
+      {name: "Jingo's Asian Mart", address: "16928 State Hwy 3, Webster, TX 77598"},
+      {name: "Go Shabu", address: "16605 El Camino Real A, Houston, TX 77062"},
+      {name: "Pinoy Fiesta Asian Store LLC", address: "1101 W Main St D, League City, TX 77573"},
+    ];
+
+    // Init map centered roughly on Houston metro
+    const map = L.map('map').setView([29.76, -95.37], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const bounds = L.latLngBounds();
+    const listEl = document.getElementById('list');
+
+    // Dedup polite header per Nominatim policy
+    const NOMINATIM = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=';
+
+    function addListItem(place, marker) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = place.name;
+      a.onclick = (e) => {
+        e.preventDefault();
+        if (marker) {
+          map.setView(marker.getLatLng(), 14);
+          marker.openPopup();
+        }
+      };
+      li.appendChild(a);
+      listEl.appendChild(li);
+    }
+
+    async function geocode(place, idx) {
+      try {
+        const url = NOMINATIM + encodeURIComponent(place.address);
+        const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+        const data = await res.json();
+        if (data && data.length) {
+          const { lat, lon, display_name } = data[0];
+          const marker = L.marker([+lat, +lon]).addTo(map);
+          marker.bindPopup(`<div class="label"><b>${place.name}</b><br/>${place.address}<br/><small>${display_name}</small><br/><a target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' ' + place.address)}">Google 지도로 열기</a></div>`);
+          bounds.extend([+lat, +lon]);
+          addListItem(place, marker);
+          if (idx === places.length - 1) {
+            map.fitBounds(bounds.pad(0.1));
+          } else {
+            map.fitBounds(bounds.pad(0.1));
+          }
+        } else {
+          const marker = L.marker(map.getCenter()).addTo(map);
+          marker.bindPopup(`<div class="label"><b>${place.name}</b><br/>지오코딩 실패: 주소 확인 필요<br/>입력주소: ${place.address}</div>`);
+          addListItem(place, marker);
+        }
+      } catch (e) {
+        const marker = L.marker(map.getCenter()).addTo(map);
+        marker.bindPopup(`<div class="label"><b>${place.name}</b><br/>지오코딩 오류</div>`);
+        addListItem(place, marker);
+      }
+    }
+
+    // Rate-limit requests a bit to be kind to the public API
+    (async () => {
+      for (let i = 0; i < places.length; i++) {
+        // stagger requests
+        await new Promise(r => setTimeout(r, 400));
+        geocode(places[i], i);
+      }
+    })();
+  </script>
+</body>
+</html>
